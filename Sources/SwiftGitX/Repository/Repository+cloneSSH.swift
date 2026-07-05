@@ -13,6 +13,7 @@ private final class SSHCloneContext: @unchecked Sendable {
     let publicKey: String
     let privateKey: String
     let passphrase: String
+    let knownHostsPaths: [String]
     var progressHandler: TransferProgressHandler?
 
     init(
@@ -20,12 +21,14 @@ private final class SSHCloneContext: @unchecked Sendable {
         publicKey: String,
         privateKey: String,
         passphrase: String,
+        knownHostsPaths: [String],
         progressHandler: TransferProgressHandler? = nil
     ) {
         self.username = username
         self.publicKey = publicKey
         self.privateKey = privateKey
         self.passphrase = passphrase
+        self.knownHostsPaths = knownHostsPaths
         self.progressHandler = progressHandler
     }
 }
@@ -54,9 +57,21 @@ private let sshCloneCredentialsCallback: git_credential_acquire_cb = { out, _, u
     return Int32(GIT_PASSTHROUGH.rawValue)
 }
 
-private let sshCloneCertificateCheckCallback: git_transport_certificate_check_cb = { _, _, _, _ in
-    // iOS 沙盒无系统 known_hosts；对齐 ssh StrictHostKeyChecking=accept-new
-    0
+private let sshCloneCertificateCheckCallback: git_transport_certificate_check_cb = { cert, valid, host, payload in
+    if valid != 0 { return 0 }
+    guard let cert, let host else { return -1 }
+    guard cert.pointee.cert_type == GIT_CERT_HOSTKEY_LIBSSH2 else { return -1 }
+
+    let hostkey = UnsafeRawPointer(cert).assumingMemoryBound(to: git_cert_hostkey.self).pointee
+    let hostString = String(cString: host)
+    let paths: [String]
+    if let payload {
+        paths = Unmanaged<SSHCloneContext>.fromOpaque(payload).takeUnretainedValue().knownHostsPaths
+    } else {
+        paths = SSHKnownHosts.defaultKnownHostsPaths()
+    }
+
+    return SSHKnownHosts.acceptNew(host: hostString, hostkey: hostkey, knownHostsPaths: paths) ? 0 : -1
 }
 
 private let sshCloneTransferProgressCallback: git_indexer_progress_cb = { stats, payload in
@@ -82,6 +97,7 @@ extension Repository {
         publicKey: String,
         privateKey: String,
         passphrase: String = "",
+        knownHostsPaths: [String] = SSHKnownHosts.defaultKnownHostsPaths(),
         options: CloneOptions = .default,
         transferProgressHandler: TransferProgressHandler? = nil
     ) async throws(SwiftGitXError) -> Repository {
@@ -92,6 +108,7 @@ extension Repository {
             publicKey: publicKey,
             privateKey: privateKey,
             passphrase: passphrase,
+            knownHostsPaths: knownHostsPaths,
             progressHandler: transferProgressHandler
         )
         let contextPayload = Unmanaged.passUnretained(cloneContext).toOpaque()
