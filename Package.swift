@@ -20,7 +20,7 @@ let package = Package(
         )
     ],
     dependencies: [
-        .package(url: "https://github.com/ibrahimcetin/libgit2.git", exact: "1.9.2")
+        .package(path: "../libgit2"),
     ],
     targets: [
         // Targets are the basic building blocks of a package, defining a module or a test suite.
