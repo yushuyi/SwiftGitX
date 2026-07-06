@@ -62,6 +62,26 @@ extension Repository {
         return Diff(pointer: validDiffPointer)
     }
 
+    /// 将指定提交的 tree 与当前 index + 工作区对比。
+    ///
+    /// 等价于 `git diff <commit>`（含 `git diff HEAD`）。
+    public func diffWorkingTree(from commit: Commit) throws(SwiftGitXError) -> Diff {
+        let tree = try commit.tree
+        let treePointer = try ObjectFactory.lookupObjectPointer(
+            oid: tree.id.raw,
+            type: GIT_OBJECT_TREE,
+            repositoryPointer: pointer
+        )
+        defer { git_object_free(treePointer) }
+
+        var diffPointer: OpaquePointer?
+        defer { git_diff_free(diffPointer) }
+
+        let status = git_diff_tree_to_workdir_with_index(&diffPointer, pointer, treePointer, nil)
+        let validDiffPointer = try SwiftGitXError.check(status, pointer: diffPointer, operation: .diff)
+        return Diff(pointer: validDiffPointer)
+    }
+
     /// Get the diff between given commit and its parent.
     ///
     /// - Parameter commit: The commit to get the diff.
