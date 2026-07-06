@@ -78,6 +78,32 @@ extension Repository {
         }
     }
 
+    /// 中止进行中的 merge，将 HEAD、索引与工作区恢复到 ORIG_HEAD。
+    public func abortMerge() throws(SwiftGitXError) {
+        guard git_repository_state(pointer) == GIT_REPOSITORY_STATE_MERGE.rawValue else {
+            throw SwiftGitXError(
+                code: .error,
+                operation: .merge,
+                category: .merge,
+                message: "没有可中止的合并（MERGE_HEAD 不存在）"
+            )
+        }
+
+        guard let origRef = try? reference.get(named: "ORIG_HEAD"),
+              let commit = origRef.target as? Commit
+        else {
+            throw SwiftGitXError(
+                code: .notFound,
+                operation: .merge,
+                category: .reference,
+                message: "无法解析 ORIG_HEAD，无法中止合并"
+            )
+        }
+
+        try reset(to: commit, mode: .hard)
+        try cleanupMergeState()
+    }
+
     private func performFastForward(to annotatedCommit: OpaquePointer) throws(SwiftGitXError) {
         var targetOID = git_annotated_commit_id(annotatedCommit).pointee
         let targetCommit = try ObjectFactory.lookupCommit(oid: targetOID, repositoryPointer: pointer)

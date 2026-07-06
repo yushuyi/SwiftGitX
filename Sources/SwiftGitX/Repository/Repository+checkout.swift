@@ -52,6 +52,33 @@ extension Repository {
     ///
     /// This method updates the working directory files to match the state of the given commit.
     /// It does not update HEAD. Use ``switch`` methods to update the HEAD reference after checkout.
+    /// 从指定提交检出部分路径到索引与工作区（等同 `git checkout <rev> -- <paths>`）。
+    public func checkout(
+        from commit: Commit,
+        paths: [String],
+        updateIndex: Bool = true
+    ) throws(SwiftGitXError) {
+        let commitPointer = try ObjectFactory.lookupObjectPointer(
+            oid: commit.id.raw,
+            type: GIT_OBJECT_COMMIT,
+            repositoryPointer: pointer
+        )
+        defer { git_object_free(commitPointer) }
+
+        var strategy: CheckoutStrategy = [.force, .disablePathSpecMatch]
+        if !updateIndex {
+            strategy.insert(.notUpdateIndex)
+        }
+
+        let options = CheckoutOptions(strategy: strategy, paths: paths)
+        try options.withGitCheckoutOptions { (gitCheckoutOptions) throws(SwiftGitXError) -> Void in
+            var opts = gitCheckoutOptions
+            try git(operation: .checkout) {
+                git_checkout_tree(pointer, commitPointer, &opts)
+            }
+        }
+    }
+
     private func checkout(commitID: OID) throws(SwiftGitXError) {
         // Lookup the commit
         let commitPointer = try ObjectFactory.lookupObjectPointer(
