@@ -3,6 +3,7 @@
 //  SwiftGitX
 //
 
+import Foundation
 import libgit2
 
 extension Repository {
@@ -44,6 +45,68 @@ extension Repository {
             return
         }
 
+        let prefersNoFastForward =
+            (preference.rawValue & GIT_MERGE_PREFERENCE_NO_FASTFORWARD.rawValue) != 0
+        let prefersFastForwardOnly =
+            (preference.rawValue & GIT_MERGE_PREFERENCE_FASTFORWARD_ONLY.rawValue) != 0
+        let canFastForward = (analysis.rawValue & GIT_MERGE_ANALYSIS_FASTFORWARD.rawValue) != 0
+        let isUnborn = (analysis.rawValue & GIT_MERGE_ANALYSIS_UNBORN.rawValue) != 0
+        let needsNormalMerge = (analysis.rawValue & GIT_MERGE_ANALYSIS_NORMAL.rawValue) != 0
+
+        // libgit2 官方示例：fast-forward 须 checkout + 移动分支指针，不能走 git_merge。
+        if isUnborn || (canFastForward && !prefersNoFastForward) {
+            try performFastForward(to: annotatedCommit)
+            return
+        }
+
+        if prefersFastForwardOnly && needsNormalMerge {
+            throw SwiftGitXError(
+                code: .nonFastForward,
+                operation: .merge,
+                category: .merge,
+                message: "当前配置仅允许 fast-forward 合并，但存在分叉历史"
+            )
+        }
+
+        try performNormalMerge(annotatedCommit: annotatedCommit, remoteBranchName: branch.name)
+    }
+
+    /// 清除进行中的 merge / rebase / cherry-pick 状态。
+    public func cleanupMergeState() throws(SwiftGitXError) {
+        try git(operation: .merge) {
+            git_repository_state_cleanup(pointer)
+        }
+    }
+
+    private func performFastForward(to annotatedCommit: OpaquePointer) throws(SwiftGitXError) {
+        var targetOID = git_annotated_commit_id(annotatedCommit).pointee
+        let targetCommit = try ObjectFactory.lookupCommit(oid: targetOID, repositoryPointer: pointer)
+        let currentBranch = try branch.current
+
+        try checkout(to: targetCommit)
+
+        let branchPointer = try ReferenceFactory.lookupBranchPointer(
+            name: currentBranch.name,
+            type: BranchType.local.raw,
+            repositoryPointer: pointer
+        )
+        defer { git_reference_free(branchPointer) }
+
+        var updatedPointer: OpaquePointer?
+        try git(operation: .merge) {
+            git_reference_set_target(&updatedPointer, branchPointer, &targetOID, "fast-forward")
+        }
+        if let updatedPointer {
+            git_reference_free(updatedPointer)
+        }
+
+        try cleanupMergeState()
+    }
+
+    private func performNormalMerge(
+        annotatedCommit: OpaquePointer,
+        remoteBranchName: String
+    ) throws(SwiftGitXError) {
         var mergeOptions = git_merge_options()
         git_merge_options_init(&mergeOptions, UInt32(GIT_MERGE_OPTIONS_VERSION))
 
@@ -51,6 +114,7 @@ extension Repository {
         git_checkout_options_init(&checkoutOptions, UInt32(GIT_CHECKOUT_OPTIONS_VERSION))
         checkoutOptions.checkout_strategy = GIT_CHECKOUT_SAFE.rawValue
 
+        var heads: [OpaquePointer?] = [annotatedCommit]
         try heads.withUnsafeMutableBufferPointer { buffer throws(SwiftGitXError) in
             try git(operation: .merge) {
                 git_merge(
@@ -62,6 +126,39 @@ extension Repository {
                 )
             }
         }
+
+        if try indexHasConflicts() {
+            throw SwiftGitXError(
+                code: .mergeConflict,
+                operation: .merge,
+                category: .merge,
+                message: "合并冲突，请先解决冲突文件后再提交"
+            )
+        }
+
+        let message = readMergeMessage() ?? "Merge \(remoteBranchName)"
+        _ = try commit(message: message)
+        try cleanupMergeState()
+    }
+
+    private func indexHasConflicts() throws(SwiftGitXError) -> Bool {
+        let indexPointer = try git(operation: .index) {
+            var indexPointer: OpaquePointer?
+            let status = git_repository_index(&indexPointer, pointer)
+            return (indexPointer, status)
+        }
+        defer { git_index_free(indexPointer) }
+        return git_index_has_conflicts(indexPointer) == 1
+    }
+
+    private func readMergeMessage() -> String? {
+        guard let workdir = try? workingDirectory else { return nil }
+        let mergeMsgPath = workdir.appendingPathComponent(".git/MERGE_MSG")
+        guard let data = try? Data(contentsOf: mergeMsgPath),
+              let text = String(data: data, encoding: .utf8)
+        else { return nil }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }
 
