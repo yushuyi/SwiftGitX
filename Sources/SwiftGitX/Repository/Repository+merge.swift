@@ -89,14 +89,19 @@ extension Repository {
             )
         }
 
-        guard let origRef = try? reference.get(named: "ORIG_HEAD"),
-              let commit = origRef.target as? Commit
-        else {
+        let commit: Commit
+        if let origRef = try? reference.get(named: "ORIG_HEAD"),
+           let origCommit = origRef.target as? Commit {
+            commit = origCommit
+        } else if let headCommit = try HEAD.target as? Commit {
+            // libgit2 冲突合并有时不写 ORIG_HEAD，此时 HEAD 仍停在合并前提交
+            commit = headCommit
+        } else {
             throw SwiftGitXError(
                 code: .notFound,
                 operation: .merge,
                 category: .reference,
-                message: "无法解析 ORIG_HEAD，无法中止合并"
+                message: "无法解析 ORIG_HEAD 或 HEAD，无法中止合并"
             )
         }
 
