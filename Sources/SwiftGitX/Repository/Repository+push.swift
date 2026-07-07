@@ -5,6 +5,7 @@
 //  Created by İbrahim Çetin on 23.11.2025.
 //
 
+import Foundation
 import libgit2
 
 extension Repository {
@@ -25,6 +26,8 @@ extension Repository {
         createsRefspec: Bool = true,
         sshCredentials: SSHMemoryCredentials? = nil,
         httpCredentials: GitHTTPCredentials? = nil,
+        connectionFetchURL: URL? = nil,
+        connectionPushURL: URL? = nil,
         transferProgressHandler: TransferProgressHandler? = nil
     ) async throws(SwiftGitXError) {
         // Get the current branch or throw an error if HEAD is detached
@@ -51,6 +54,14 @@ extension Repository {
         // Lookup the remote
         let remotePointer = try ReferenceFactory.lookupRemotePointer(name: remote.name, repositoryPointer: pointer)
         defer { git_remote_free(remotePointer) }
+
+        if connectionFetchURL != nil || connectionPushURL != nil {
+            try GitRemoteInstanceURL.apply(
+                fetchURL: connectionFetchURL,
+                pushURL: connectionPushURL,
+                to: remotePointer
+            )
+        }
 
         let networkContext: GitNetworkContext?
         var plainProgressPointer: UnsafeMutablePointer<TransferProgressHandler>?

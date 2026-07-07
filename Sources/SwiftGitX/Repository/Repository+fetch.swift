@@ -3,6 +3,7 @@
 //  SwiftGitX
 //
 
+import Foundation
 import libgit2
 
 extension Repository {
@@ -14,6 +15,7 @@ extension Repository {
         refspecs: [String]? = nil,
         sshCredentials: SSHMemoryCredentials? = nil,
         httpCredentials: GitHTTPCredentials? = nil,
+        connectionFetchURL: URL? = nil,
         transferProgressHandler: TransferProgressHandler? = nil
     ) async throws(SwiftGitXError) {
         guard let remote = remote ?? (try? branch.current.remote) ?? self.remote["origin"] else {
@@ -22,6 +24,10 @@ extension Repository {
 
         let remotePointer = try ReferenceFactory.lookupRemotePointer(name: remote.name, repositoryPointer: pointer)
         defer { git_remote_free(remotePointer) }
+
+        if let connectionFetchURL {
+            try GitRemoteInstanceURL.apply(fetchURL: connectionFetchURL, to: remotePointer)
+        }
 
         let networkContext: GitNetworkContext?
         var plainProgressPointer: UnsafeMutablePointer<TransferProgressHandler>?

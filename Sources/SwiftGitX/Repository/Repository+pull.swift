@@ -3,6 +3,7 @@
 //  SwiftGitX
 //
 
+import Foundation
 import libgit2
 
 extension Repository {
@@ -12,6 +13,7 @@ extension Repository {
         branchName: String? = nil,
         sshCredentials: SSHMemoryCredentials? = nil,
         httpCredentials: GitHTTPCredentials? = nil,
+        connectionFetchURL: URL? = nil,
         transferProgressHandler: TransferProgressHandler? = nil
     ) async throws(SwiftGitXError) {
         let currentBranch = try branch.current
@@ -28,6 +30,7 @@ extension Repository {
             refspecs: refspecs.map { [$0] },
             sshCredentials: sshCredentials,
             httpCredentials: httpCredentials,
+            connectionFetchURL: connectionFetchURL,
             transferProgressHandler: transferProgressHandler
         )
 
