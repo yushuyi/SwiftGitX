@@ -7,15 +7,11 @@ import libgit2
 
 extension Repository {
     /// 从远程拉取并合并到当前分支（fetch + merge）。
-    ///
-    /// - Parameters:
-    ///   - remote: 远程名称，默认取当前分支 upstream 或 `origin`。
-    ///   - branchName: 要合并的远程分支短名（如 `main`），默认取 upstream 或 `origin/<当前分支>`。
-    ///   - sshCredentials: iOS SSH 传输凭据；HTTPS 远程可传 `nil`。
     public nonisolated func pull(
         remote: Remote? = nil,
         branchName: String? = nil,
         sshCredentials: SSHMemoryCredentials? = nil,
+        httpCredentials: GitHTTPCredentials? = nil,
         transferProgressHandler: TransferProgressHandler? = nil
     ) async throws(SwiftGitXError) {
         let currentBranch = try branch.current
@@ -31,6 +27,7 @@ extension Repository {
             remote: resolvedRemote,
             refspecs: refspecs.map { [$0] },
             sshCredentials: sshCredentials,
+            httpCredentials: httpCredentials,
             transferProgressHandler: transferProgressHandler
         )
 

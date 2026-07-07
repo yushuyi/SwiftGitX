@@ -2,8 +2,6 @@
 //  Repository+cloneSSH.swift
 //  SwiftGitX
 //
-//  iOS 上 libgit2 无法 fork ssh 子进程，须通过 libssh2 + 内存 SSH 凭据克隆。
-//
 
 import Foundation
 import libgit2
@@ -45,16 +43,47 @@ extension Repository {
         options: CloneOptions = .default,
         transferProgressHandler: TransferProgressHandler? = nil
     ) async throws(SwiftGitXError) -> Repository {
-        try SwiftGitXRuntime.initialize()
-
-        let sshContext = GitSSHNetworkContext(
-            credentials: credentials,
-            progressHandler: transferProgressHandler
+        try await cloneWithNetworkCredentials(
+            from: remoteURL,
+            to: localURL,
+            sshCredentials: credentials,
+            httpCredentials: nil,
+            options: options,
+            transferProgressHandler: transferProgressHandler
         )
+    }
+
+    /// 使用 SSH 和/或 HTTPS 凭据克隆仓库。
+    public nonisolated static func cloneWithNetworkCredentials(
+        from remoteURL: URL,
+        to localURL: URL,
+        sshCredentials: SSHMemoryCredentials? = nil,
+        httpCredentials: GitHTTPCredentials? = nil,
+        options: CloneOptions = .default,
+        transferProgressHandler: TransferProgressHandler? = nil
+    ) async throws(SwiftGitXError) -> Repository {
+        try SwiftGitXRuntime.initialize()
 
         var cloneOptions = options.gitCloneOptions
         cloneOptions.checkout_opts.checkout_strategy = GIT_CHECKOUT_SAFE.rawValue
-        sshContext.bind(to: &cloneOptions.fetch_opts.callbacks)
+
+        let networkContext: GitNetworkContext?
+        if GitNetworkCallbackBinder.needsCustomCallbacks(
+            sshCredentials: sshCredentials,
+            httpCredentials: httpCredentials,
+            progressHandler: transferProgressHandler
+        ) {
+            let context = GitNetworkContext(
+                sshCredentials: sshCredentials,
+                httpCredentials: httpCredentials,
+                progressHandler: transferProgressHandler
+            )
+            context.bind(to: &cloneOptions.fetch_opts.callbacks)
+            networkContext = context
+        } else {
+            networkContext = nil
+        }
+        _ = networkContext
 
         do {
             let pointer = try git(operation: .clone) {

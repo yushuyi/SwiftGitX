@@ -24,6 +24,7 @@ extension Repository {
         remote: Remote? = nil,
         createsRefspec: Bool = true,
         sshCredentials: SSHMemoryCredentials? = nil,
+        httpCredentials: GitHTTPCredentials? = nil,
         transferProgressHandler: TransferProgressHandler? = nil
     ) async throws(SwiftGitXError) {
         // Get the current branch or throw an error if HEAD is detached
@@ -51,34 +52,32 @@ extension Repository {
         let remotePointer = try ReferenceFactory.lookupRemotePointer(name: remote.name, repositoryPointer: pointer)
         defer { git_remote_free(remotePointer) }
 
-        let sshContext: GitSSHNetworkContext?
+        let networkContext: GitNetworkContext?
         var plainProgressPointer: UnsafeMutablePointer<TransferProgressHandler>?
         var pushOptions: git_push_options?
 
-        if sshCredentials != nil || transferProgressHandler != nil {
+        if GitNetworkCallbackBinder.needsCustomCallbacks(
+            sshCredentials: sshCredentials,
+            httpCredentials: httpCredentials,
+            progressHandler: transferProgressHandler
+        ) {
             var options = git_push_options()
             git_push_options_init(&options, UInt32(GIT_PUSH_OPTIONS_VERSION))
 
-            if let sshCredentials {
-                let context = GitSSHNetworkContext(
-                    credentials: sshCredentials,
-                    progressHandler: transferProgressHandler
-                )
-                context.bind(to: &options.callbacks)
-                sshContext = context
-            } else {
-                sshContext = nil
-                plainProgressPointer = GitSSHNetworkContext.bindPlainProgressHandler(
-                    transferProgressHandler,
-                    to: &options.callbacks
-                )
-            }
+            let bound = GitNetworkCallbackBinder.bind(
+                sshCredentials: sshCredentials,
+                httpCredentials: httpCredentials,
+                progressHandler: transferProgressHandler,
+                to: &options.callbacks
+            )
+            networkContext = bound.context
+            plainProgressPointer = bound.plainProgressPointer
             pushOptions = options
         } else {
-            sshContext = nil
+            networkContext = nil
         }
         defer { plainProgressPointer?.deallocate() }
-        _ = sshContext
+        _ = networkContext
 
         // Perform the push operation using configured refspecs
         try git(operation: .push) {

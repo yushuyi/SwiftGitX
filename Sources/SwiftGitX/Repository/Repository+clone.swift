@@ -26,8 +26,20 @@ extension Repository {
         from remoteURL: URL,
         to localURL: URL,
         options: CloneOptions = .default,
+        httpCredentials: GitHTTPCredentials? = nil,
         transferProgressHandler: TransferProgressHandler? = nil
     ) async throws(SwiftGitXError) -> Repository {
+        if httpCredentials != nil || transferProgressHandler != nil {
+            return try await cloneWithNetworkCredentials(
+                from: remoteURL,
+                to: localURL,
+                sshCredentials: nil,
+                httpCredentials: httpCredentials,
+                options: options,
+                transferProgressHandler: transferProgressHandler
+            )
+        }
+
         // Initialize the SwiftGitXRuntime
         try SwiftGitXRuntime.initialize()
 

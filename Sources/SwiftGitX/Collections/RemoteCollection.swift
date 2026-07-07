@@ -79,6 +79,49 @@ public struct RemoteCollection: Sequence {
         }
     }
 
+    /// 更新远程 fetch URL（对应 `git remote set-url`）。
+    public func setURL(named name: String, url: URL) throws(SwiftGitXError) {
+        try git(operation: .remoteSetURL) {
+            git_remote_set_url(repositoryPointer, name, url.absoluteString)
+        }
+    }
+
+    /// 更新远程 push URL（对应 `git remote set-url --push`）。
+    public func setPushURL(named name: String, url: URL) throws(SwiftGitXError) {
+        try git(operation: .remoteSetURL) {
+            git_remote_set_pushurl(repositoryPointer, name, url.absoluteString)
+        }
+    }
+
+    /// 读取远程 fetch URL 字符串。
+    public func urlString(named name: String) throws(SwiftGitXError) -> String {
+        let remotePointer = try ReferenceFactory.lookupRemotePointer(name: name, repositoryPointer: repositoryPointer)
+        defer { git_remote_free(remotePointer) }
+        guard let url = git_remote_url(remotePointer) else {
+            throw SwiftGitXError(code: .notFound, category: .reference, message: "Remote '\(name)' 无 fetch URL")
+        }
+        return String(cString: url)
+    }
+
+    /// 读取远程 push URL；未单独配置时回退 fetch URL。
+    public func pushURLString(named name: String) throws(SwiftGitXError) -> String {
+        let remotePointer = try ReferenceFactory.lookupRemotePointer(name: name, repositoryPointer: repositoryPointer)
+        defer { git_remote_free(remotePointer) }
+        if let pushURL = git_remote_pushurl(remotePointer) {
+            return String(cString: pushURL)
+        }
+        return try urlString(named: name)
+    }
+
+    /// 重命名远程（对应 `git remote rename`）。
+    public func rename(_ remote: Remote, to newName: String) throws(SwiftGitXError) {
+        try git(operation: .remoteRename) {
+            var problems = git_strarray()
+            defer { git_strarray_free(&problems) }
+            return git_remote_rename(&problems, repositoryPointer, remote.name, newName)
+        }
+    }
+
     public func makeIterator() -> RemoteIterator {
         RemoteIterator(remoteNames: (try? remoteNames) ?? [], repositoryPointer: repositoryPointer)
     }
@@ -120,4 +163,6 @@ extension SwiftGitXError.Operation {
     public static let remoteList = Self(rawValue: "remoteList")
     public static let remoteAdd = Self(rawValue: "remoteAdd")
     public static let remoteRemove = Self(rawValue: "remoteRemove")
+    public static let remoteSetURL = Self(rawValue: "remoteSetURL")
+    public static let remoteRename = Self(rawValue: "remoteRename")
 }
