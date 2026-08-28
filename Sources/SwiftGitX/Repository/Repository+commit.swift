@@ -36,13 +36,15 @@ extension Repository {
         return try ObjectFactory.lookupCommit(oid: oid, repositoryPointer: pointer)
     }
 
-    /// 修改最近一次提交（HEAD）的提交信息。
+    /// 修改最近一次提交（HEAD），以当前暂存区为提交内容。
     ///
     /// - Parameter message: 新的提交信息。
     /// - Returns: 改写后的提交。
     ///
-    /// 仅改写提交信息：作者、树与暂存区内容保持不变，且不要求暂存区有任何改动，
-    /// 等价于命令行 `git commit --amend -m <message>` 的「只改信息」场景。
+    /// 与命令行 `git commit --amend -m <message>` 语义一致：
+    /// - 提交内容为当前暂存区（干净暂存区时即「仅改提交信息」场景）
+    /// - 作者沿用原提交，committer 更新为当前配置身份
+    /// - 需要已配置 user.name / user.email（与真实 git 一致）
     @discardableResult
     public func amendCommit(message: String) throws(SwiftGitXError) -> Commit {
         // 取 HEAD 指向的提交作为被改写对象（空仓库 / 未出生分支时直接报错）
@@ -62,11 +64,31 @@ extension Repository {
         )
         defer { git_object_free(commitPointer) }
 
-        // update_ref = "HEAD"：改写后同步移动当前分支指向；
-        // author / committer / tree 传 nil 沿用原提交，仅替换提交信息。
+        // 用当前暂存区生成树：对齐真实 git 的「amend 提交当前 index」语义，
+        // 干净暂存区时 index 树 == 原树，行为退化为仅改提交信息
+        var indexPointer: OpaquePointer?
+        try SwiftGitXError.check(git_repository_index(&indexPointer, pointer), operation: .index)
+        defer { git_index_free(indexPointer) }
+
+        var indexTreeOID = git_oid()
+        try SwiftGitXError.check(git_index_write_tree(&indexTreeOID, indexPointer), operation: .index)
+
+        let treePointer = try ObjectFactory.lookupObjectPointer(
+            oid: indexTreeOID,
+            type: GIT_OBJECT_TREE,
+            repositoryPointer: pointer
+        )
+        defer { git_object_free(treePointer) }
+
+        // committer 更新为当前配置身份（对齐真实 git），author 沿用原提交
+        var committer: UnsafeMutablePointer<git_signature>?
+        try SwiftGitXError.check(git_signature_default(&committer, pointer), operation: .commit)
+        defer { git_signature_free(committer) }
+
+        // update_ref = "HEAD"：改写后同步移动当前分支指向
         var oid = git_oid()
         try git(operation: .commit) {
-            git_commit_amend(&oid, commitPointer, "HEAD", nil, nil, nil, message, nil)
+            git_commit_amend(&oid, commitPointer, "HEAD", nil, committer, nil, message, treePointer)
         }
 
         return try ObjectFactory.lookupCommit(oid: oid, repositoryPointer: pointer)

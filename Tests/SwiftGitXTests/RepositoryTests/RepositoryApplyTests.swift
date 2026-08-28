@@ -25,6 +25,27 @@ final class RepositoryApplyTests: SwiftGitXTest {
         #expect(commitCount == 2, "amend 不应新增提交")
     }
 
+    @Test("Amend includes staged changes like real git")
+    func amendWithStagedChanges() async throws {
+        let repository = mockRepository()
+        _ = try repository.mockCommit(message: "first")
+        let second = try repository.mockCommit(message: "second")
+
+        // 暂存区有新改动时 amend：改动应进入改写后的提交（对齐真实 git）
+        let extra = try repository.mockFile(name: "extra.txt", content: "staged\n")
+        try repository.add(file: extra)
+
+        let amended = try repository.amendCommit(message: "second + staged")
+
+        let tree = try amended.tree
+        let entryNames = Set(tree.entries.map(\.name))
+        #expect(entryNames.contains("extra.txt"), "暂存的新文件应进入 amend 后的提交")
+
+        let head = try #require(repository.HEAD.target as? Commit)
+        #expect(head.id == amended.id)
+        #expect(amended.author.name == second.author.name, "author 应沿用原提交")
+    }
+
     @Test("Apply full git-style patch to working tree")
     func applyFullPatch() async throws {
         let repository = mockRepository()

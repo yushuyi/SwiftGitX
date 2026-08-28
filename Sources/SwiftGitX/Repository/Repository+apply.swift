@@ -11,6 +11,9 @@ extension SwiftGitXError.Operation {
 
 extension Repository {
 
+    /// GIT_APPLY_OPTIONS_VERSION 的值（C 宏不导出到 Swift）
+    private static let applyOptionsVersion: UInt32 = 1
+
     /// 将 unified diff 补丁文本应用到当前工作区。
     ///
     /// - Parameters:
@@ -30,9 +33,11 @@ extension Repository {
         try SwiftGitXError.check(status, operation: .apply)
         defer { git_diff_free(diffPointer) }
 
-        // GIT_APPLY_OPTIONS_VERSION 为 C 宏（值为 1）不会导出到 Swift，直接传 1
         var options = git_apply_options()
-        git_apply_options_init(&options, 1)
+        try SwiftGitXError.check(
+            git_apply_options_init(&options, Self.applyOptionsVersion),
+            operation: .apply
+        )
         options.flags = checkOnly ? GIT_APPLY_CHECK.rawValue : 0
 
         try git(operation: .apply) {
