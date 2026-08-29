@@ -44,9 +44,11 @@ extension Repository {
     /// ```
     public func show<ObjectType: Object>(hexPrefix: String) throws(SwiftGitXError) -> ObjectType {
         let lowered = hexPrefix.lowercased()
-        guard lowered.count >= 4, lowered.allSatisfy(\.isHexDigit) else {
+        // 4 = GIT_OID_MINPREFIXLEN；isHexDigit 是 Unicode 属性，需再限 ASCII
+        guard (4...40).contains(lowered.count),
+              lowered.allSatisfy({ $0.isASCII && $0.isHexDigit }) else {
             throw SwiftGitXError(
-                code: .error,
+                code: .invalid,
                 category: .object,
                 message: "无效的哈希前缀: \(hexPrefix)"
             )
@@ -58,5 +60,26 @@ extension Repository {
         return try ObjectFactory.lookupObject(
             oid: oid, length: lowered.count, repositoryPointer: pointer
         )
+    }
+
+    /// 按修订版本表达式查找对象。
+    ///
+    /// - Parameter revision: 修订版本表达式（`HEAD`、`HEAD~2`、`origin/main`、
+    ///   `HEAD:<path>`、完整/短 SHA 等，交由 libgit2 `git_revparse_single` 解析）。
+    /// - Returns: 表达式指向的对象。
+    ///
+    /// ```swift
+    /// let blob: Blob = try repository.show(revision: "HEAD:README.md")
+    /// ```
+    public func show<ObjectType: Object>(revision: String) throws(SwiftGitXError) -> ObjectType {
+        let object = try ObjectFactory.lookupObject(revision: revision, repositoryPointer: pointer)
+        guard let typed = object as? ObjectType else {
+            throw SwiftGitXError(
+                code: .invalid,
+                category: .object,
+                message: "Object is not of type \(ObjectType.self)"
+            )
+        }
+        return typed
     }
 }

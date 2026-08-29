@@ -9,30 +9,45 @@ public struct CommitSequence: Sequence {
     public typealias Element = Commit
 
     public let root: Commit
+    /// 从遍历中隐藏的提交（其整个祖先链被排除），对应 `git log a..b` 的 a 侧
+    public let hiding: Commit?
     public let sorting: LogSortingOption
 
     private let repositoryPointer: OpaquePointer
 
-    init(root: Commit, sorting: LogSortingOption, repositoryPointer: OpaquePointer) {
+    init(
+        root: Commit,
+        hiding: Commit? = nil,
+        sorting: LogSortingOption,
+        repositoryPointer: OpaquePointer
+    ) {
         self.root = root
+        self.hiding = hiding
         self.sorting = sorting
         self.repositoryPointer = repositoryPointer
     }
 
     public func makeIterator() -> CommitIterator {
-        CommitIterator(root: root, sorting: sorting, repositoryPointer: repositoryPointer)
+        CommitIterator(root: root, hiding: hiding, sorting: sorting, repositoryPointer: repositoryPointer)
     }
 }
 
 public class CommitIterator: IteratorProtocol {
     public let root: Commit
+    public let hiding: Commit?
     public let sorting: LogSortingOption
 
     private let walkerPointer: OpaquePointer?
     private let repositoryPointer: OpaquePointer
 
-    init(root: Commit, sorting: LogSortingOption, repositoryPointer: OpaquePointer) {
+    init(
+        root: Commit,
+        hiding: Commit? = nil,
+        sorting: LogSortingOption,
+        repositoryPointer: OpaquePointer
+    ) {
         self.root = root
+        self.hiding = hiding
         self.sorting = sorting
 
         self.repositoryPointer = repositoryPointer
@@ -46,6 +61,12 @@ public class CommitIterator: IteratorProtocol {
         // Set the root commit
         var rootID = root.id.raw
         git_revwalk_push(walkerPointer, &rootID)
+
+        // 隐藏提交：其祖先链整体排除（对齐 git revwalk 的 hide 语义）
+        if let hiding {
+            var hideID = hiding.id.raw
+            git_revwalk_hide(walkerPointer, &hideID)
+        }
 
         // Set the sorting
         git_revwalk_sorting(walkerPointer, sorting.rawValue)

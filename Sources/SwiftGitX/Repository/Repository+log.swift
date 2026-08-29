@@ -43,4 +43,23 @@ extension Repository {
     public func log(from commit: Commit, sorting: LogSortingOption = .none) -> CommitSequence {
         CommitSequence(root: commit, sorting: sorting, repositoryPointer: pointer)
     }
+
+    /// Retrieves the commit history from `commit`, excluding the ancestry of `hidden`.
+    ///
+    /// 等价于 `git log <hidden>..<commit>`：从 `commit` 可达、但排除 `hidden`
+    /// 及其整个祖先链。用于本地领先 / 远程领先等范围查询。
+    ///
+    /// - Parameters:
+    ///   - commit: The commit to start the commit history from.
+    ///   - hidden: The commit whose ancestry (including itself) is excluded.
+    ///   - sorting: The sorting option for the commit sequence. Default is `.none`.
+    ///
+    /// - Returns: A `CommitSequence` representing the commit history.
+    public func log(
+        from commit: Commit,
+        hiding hidden: Commit?,
+        sorting: LogSortingOption = .none
+    ) -> CommitSequence {
+        CommitSequence(root: commit, hiding: hidden, sorting: sorting, repositoryPointer: pointer)
+    }
 }

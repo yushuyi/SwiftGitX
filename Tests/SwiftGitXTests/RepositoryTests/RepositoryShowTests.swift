@@ -111,15 +111,40 @@ final class RepositoryShowTests: SwiftGitXTest {
         let repository = mockRepository()
         _ = try repository.mockCommit()
 
-        // 少于 4 位 / 含非十六进制字符 / 不存在的前缀均应抛错
+        // 少于 4 位 / 含非十六进制字符：前置 guard 抛「无效的哈希前缀」
         #expect(throws: SwiftGitXError.self) {
-            let _: Commit = try repository.show(hexPrefix: "abc")
+            do { let _: Commit = try repository.show(hexPrefix: "abc"); return }
+            catch let e as SwiftGitXError { #expect(e.message.contains("无效的哈希前缀")); throw e }
         }
         #expect(throws: SwiftGitXError.self) {
-            let _: Commit = try repository.show(hexPrefix: "xyz123")
+            do { let _: Commit = try repository.show(hexPrefix: "xyz123"); return }
+            catch let e as SwiftGitXError { #expect(e.message.contains("无效的哈希前缀")); throw e }
         }
+        // 41 位（超过 40 上限）：同样前置 guard 拒绝
         #expect(throws: SwiftGitXError.self) {
-            let _: Commit = try repository.show(hexPrefix: "ffffffff")
+            do { let _: Commit = try repository.show(hexPrefix: String(repeating: "a", count: 41)); return }
+            catch let e as SwiftGitXError { #expect(e.message.contains("无效的哈希前缀")); throw e }
         }
+        // 全角十六进制字符：非 ASCII，前置 guard 拒绝
+        #expect(throws: SwiftGitXError.self) {
+            do { let _: Commit = try repository.show(hexPrefix: "４６９２"); return }
+            catch let e as SwiftGitXError { #expect(e.message.contains("无效的哈希前缀")); throw e }
+        }
+        // 格式合法但不存在的对象：走 libgit2 路径报 notFound
+        #expect(throws: SwiftGitXError.self) {
+            do { let _: Commit = try repository.show(hexPrefix: "ffffffff"); return }
+            catch let e as SwiftGitXError { #expect(e.code == .notFound, "应报 notFound，实际 \(e.code)"); throw e }
+        }
+    }
+
+    @Test("Show by uppercase hex prefix")
+    func showByUppercaseHexPrefix() throws {
+        let repository = mockRepository()
+        let commit = try repository.mockCommit()
+
+        // 大小写不敏感（文档承诺的行为）
+        let hex = commit.id.hex.uppercased()
+        let found: Commit = try repository.show(hexPrefix: String(hex.prefix(8)))
+        #expect(found == commit)
     }
 }
