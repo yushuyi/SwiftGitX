@@ -86,4 +86,40 @@ final class RepositoryShowTests: SwiftGitXTest {
             try repository.show(id: commit.id) as Tree
         }
     }
+
+    @Test("Show commit by hex prefix (dangling commit included)")
+    func showByHexPrefix() throws {
+        let repository = mockRepository()
+        let first = try repository.mockCommit()
+        let second = try repository.mockCommit()
+
+        // soft reset 后 second 成为 dangling 提交：短 SHA 前缀查找必须仍可命中
+        // （对齐真实 git；此前 Terminal 解析器只扫可达提交导致 reset 后无法回退）
+        try repository.reset(to: first, mode: .soft)
+
+        let hex = second.id.hex
+        let found: Commit = try repository.show(hexPrefix: String(hex.prefix(8)))
+        #expect(found == second)
+
+        // 全长度前缀（40 位）同样可用
+        let foundFull: Commit = try repository.show(hexPrefix: hex)
+        #expect(foundFull == second)
+    }
+
+    @Test("Show by invalid hex prefix throws")
+    func showByInvalidHexPrefixThrows() throws {
+        let repository = mockRepository()
+        _ = try repository.mockCommit()
+
+        // 少于 4 位 / 含非十六进制字符 / 不存在的前缀均应抛错
+        #expect(throws: SwiftGitXError.self) {
+            let _: Commit = try repository.show(hexPrefix: "abc")
+        }
+        #expect(throws: SwiftGitXError.self) {
+            let _: Commit = try repository.show(hexPrefix: "xyz123")
+        }
+        #expect(throws: SwiftGitXError.self) {
+            let _: Commit = try repository.show(hexPrefix: "ffffffff")
+        }
+    }
 }

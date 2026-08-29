@@ -137,6 +137,50 @@ enum ObjectFactory {
         return objectPointer
     }
 
+    /// Lookups an object of any type by an OID prefix (partial hex length).
+    ///
+    /// 走 `git_object_lookup_prefix`：不要求对象可达（dangling 对象亦可查找），
+    /// 与真实 git 的短 SHA 语义一致；前缀歧义时由 libgit2 返回 EAMBIGUOUS 抛错。
+    ///
+    /// - Parameters:
+    ///   - oid: 已按前缀解析出的 OID（其余字节为 0）。
+    ///   - length: 前缀的十六进制长度（4...40）。
+    ///   - repositoryPointer: The pointer to the repository.
+    static func lookupObject<ObjectType: Object>(
+        oid: git_oid,
+        length: Int,
+        repositoryPointer: OpaquePointer
+    ) throws(SwiftGitXError) -> ObjectType {
+        let object = try lookupObject(oid: oid, length: length, repositoryPointer: repositoryPointer)
+
+        guard let object = object as? ObjectType else {
+            throw SwiftGitXError(
+                code: .error, category: .object,
+                message: "Object is not of type \(ObjectType.self)"
+            )
+        }
+
+        return object
+    }
+
+    /// Lookups an object of any type by an OID prefix (partial hex length).
+    static func lookupObject(
+        oid: git_oid,
+        length: Int,
+        repositoryPointer: OpaquePointer
+    ) throws(SwiftGitXError) -> any Object {
+        var oid = oid
+
+        let objectPointer = try git {
+            var pointer: OpaquePointer?
+            let status = git_object_lookup_prefix(&pointer, repositoryPointer, &oid, length, GIT_OBJECT_ANY)
+            return (pointer, status)
+        }
+        defer { git_object_free(objectPointer) }
+
+        return try makeObject(pointer: objectPointer)
+    }
+
     static func lookupObject(revision: String, repositoryPointer: OpaquePointer) throws(SwiftGitXError) -> any Object {
         let objectPointer = try lookupObjectPointer(revision: revision, repositoryPointer: repositoryPointer)
         defer { git_object_free(objectPointer) }
