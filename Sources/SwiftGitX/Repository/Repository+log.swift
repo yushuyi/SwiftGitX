@@ -52,6 +52,7 @@ extension Repository {
     /// - Parameters:
     ///   - commit: The commit to start the commit history from.
     ///   - hidden: The commit whose ancestry (including itself) is excluded.
+    ///     传 `nil` 时不隐藏任何提交，等价于 `log(from:sorting:)`。
     ///   - sorting: The sorting option for the commit sequence. Default is `.none`.
     ///
     /// - Returns: A `CommitSequence` representing the commit history.

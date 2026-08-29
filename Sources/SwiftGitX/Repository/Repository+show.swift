@@ -77,7 +77,7 @@ extension Repository {
             throw SwiftGitXError(
                 code: .invalid,
                 category: .object,
-                message: "Object is not of type \(ObjectType.self)"
+                message: "对象类型不匹配：期望 \(ObjectType.self)"
             )
         }
         return typed

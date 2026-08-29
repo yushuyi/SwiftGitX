@@ -1,3 +1,4 @@
+import Foundation
 import SwiftGitX
 import Testing
 
@@ -111,24 +112,40 @@ final class RepositoryShowTests: SwiftGitXTest {
         let repository = mockRepository()
         _ = try repository.mockCommit()
 
-        // 少于 4 位 / 含非十六进制字符：前置 guard 抛「无效的哈希前缀」
+        // 少于 4 位 / 含非十六进制字符：前置 guard 抛「无效的哈希前缀」(.invalid)
         #expect(throws: SwiftGitXError.self) {
             do { let _: Commit = try repository.show(hexPrefix: "abc"); return }
-            catch let e as SwiftGitXError { #expect(e.message.contains("无效的哈希前缀")); throw e }
+            catch let e as SwiftGitXError {
+                #expect(e.message.contains("无效的哈希前缀"))
+                #expect(e.code == .invalid, "guard 路径应报 .invalid，实际 \(e.code)")
+                throw e
+            }
         }
         #expect(throws: SwiftGitXError.self) {
             do { let _: Commit = try repository.show(hexPrefix: "xyz123"); return }
-            catch let e as SwiftGitXError { #expect(e.message.contains("无效的哈希前缀")); throw e }
+            catch let e as SwiftGitXError {
+                #expect(e.message.contains("无效的哈希前缀"))
+                #expect(e.code == .invalid)
+                throw e
+            }
         }
         // 41 位（超过 40 上限）：同样前置 guard 拒绝
         #expect(throws: SwiftGitXError.self) {
             do { let _: Commit = try repository.show(hexPrefix: String(repeating: "a", count: 41)); return }
-            catch let e as SwiftGitXError { #expect(e.message.contains("无效的哈希前缀")); throw e }
+            catch let e as SwiftGitXError {
+                #expect(e.message.contains("无效的哈希前缀"))
+                #expect(e.code == .invalid)
+                throw e
+            }
         }
         // 全角十六进制字符：非 ASCII，前置 guard 拒绝
         #expect(throws: SwiftGitXError.self) {
             do { let _: Commit = try repository.show(hexPrefix: "４６９２"); return }
-            catch let e as SwiftGitXError { #expect(e.message.contains("无效的哈希前缀")); throw e }
+            catch let e as SwiftGitXError {
+                #expect(e.message.contains("无效的哈希前缀"))
+                #expect(e.code == .invalid)
+                throw e
+            }
         }
         // 格式合法但不存在的对象：走 libgit2 路径报 notFound
         #expect(throws: SwiftGitXError.self) {
@@ -146,5 +163,26 @@ final class RepositoryShowTests: SwiftGitXTest {
         let hex = commit.id.hex.uppercased()
         let found: Commit = try repository.show(hexPrefix: String(hex.prefix(8)))
         #expect(found == commit)
+    }
+
+    @Test("Show by revision expression")
+    func showByRevision() throws {
+        let repository = mockRepository()
+        let file = try repository.mockFile(name: "hello.txt", content: "hello revparse\n")
+        _ = try repository.mockCommit(file: file)
+
+        // HEAD:<path> 冒号语法应解析为 Blob
+        let blob: Blob = try repository.show(revision: "HEAD:hello.txt")
+        #expect(blob.content == Data("hello revparse\n".utf8))
+
+        // HEAD 解析为最新提交
+        let head: Commit = try repository.show(revision: "HEAD")
+        #expect(head == Array(try repository.log()).first)
+
+        // 类型不匹配：HEAD 指向 commit，按 Tree 取应抛 .invalid
+        #expect(throws: SwiftGitXError.self) {
+            do { let _: Tree = try repository.show(revision: "HEAD"); return }
+            catch let e as SwiftGitXError { #expect(e.code == .invalid, "应报 .invalid，实际 \(e.code)"); throw e }
+        }
     }
 }

@@ -59,6 +59,8 @@ public class CommitIterator: IteratorProtocol {
         self.walkerPointer = walkerPointer
 
         // Set the root commit
+        // push/hide 均操作同一缓存 commit node；对已成功 lookup 的 oid 实际不会
+        // 失败，故沿用既有模式忽略返回值（极端失败时迭代器输出空序列）
         var rootID = root.id.raw
         git_revwalk_push(walkerPointer, &rootID)
 
